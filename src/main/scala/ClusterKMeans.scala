@@ -218,21 +218,6 @@ epsilon determines the distance threshold within which we consider k-means to ha
     }
   }
 
-  def KMeansRun(p: Params, v: RDD[Vector]): KMeansModel = {
-    val initMode = p.initializationMode match {
-      case Random => KMeans.RANDOM
-      case Parallel => KMeans.K_MEANS_PARALLEL
-    }
-
-    val model = new KMeans()
-      .setInitializationMode(initMode)
-      .setK(p.k)
-      .setMaxIterations(p.numIterations)
-      .run(vect)
-
-    model
-  }
-
   def run(params: Params) {
     val conf = new SparkConf().setAppName(s"hw.ClusterKMeans with $params")
     val sc = new SparkContext(conf)
@@ -283,23 +268,44 @@ epsilon determines the distance threshold within which we consider k-means to ha
       case Parallel => KMeans.K_MEANS_PARALLEL
     }
 
-    val startTime = System.nanoTime()
-
-    val model = new KMeans()
+    val km = new KMeans()
       .setInitializationMode(initMode)
-      .setK(params.k)
       .setMaxIterations(params.numIterations)
-      .run(vect)
 
-    val elapsed = (System.nanoTime() - startTime) / 1e9
+    println("| K | WSSSE | Time (sec) |")
 
-    println(s"| Time cost | $elapsed sec |")
+    val ks = params.k until NUM_COLS
+    val se = ks.map { k =>
+      {
+        val startTime = System.nanoTime()
 
-    // Evaluate clustering by computing Within Set Sum of Squared Errors
-    val WSSSE = model.computeCost(vect)
-    println(s"| Within Set Sum of Squared Errors (WSSSE) | $WSSSE |")
+        val model = km.setK(params.k).run(vect)
+
+        val elapsed = (System.nanoTime() - startTime) / 1e9
+
+        // Evaluate clustering by computing Within Set Sum of Squared Errors
+        val WSSSE = model.computeCost(vect)
+        println(s"| $k | $WSSSE | $elapsed |")
+
+        (k, WSSSE, elapsed, model)
+      }
+    }
+
+    val error = 5.0
+    ks.foldLeft(error){(test, idx) =>
+      val currentError = ???
+      if(currentError > error) {
+
+      }
+    }
+
+    println("""
+              || Notes |
+              || WSSSE | Within Set Sum of Squared Errors |
+              |""".stripMargin)
 
     /*
+
     model.clusterCenters.foreach(
       v =>
     )
@@ -349,7 +355,7 @@ epsilon determines the distance threshold within which we consider k-means to ha
 
     // Save model
     // TODO: Change path into cmd option.
-    model.save(sc, "myModelPath")
+//    model.save(sc, "myModelPath")
 
     sc.stop()
   }
