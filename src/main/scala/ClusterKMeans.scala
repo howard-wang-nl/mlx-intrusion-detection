@@ -21,14 +21,11 @@ package nl.ing.mlx
 
 // scalastyle:off println
 //import org.apache.log4j.{Level, Logger}
-import org.apache.spark.metrics.source
 import org.apache.spark.mllib.clustering.{KMeansModel, KMeans}
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.sql.catalyst.errors
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import scopt.OptionParser
-
-import scala.tools.nsc.interpreter.session
 
 /**
  * K-means clustering analysis on KDD Cup 1999 data set for network intrusion detection.
@@ -221,6 +218,21 @@ epsilon determines the distance threshold within which we consider k-means to ha
     }
   }
 
+  def KMeansRun(p: Params, v: RDD[Vector]): KMeansModel = {
+    val initMode = p.initializationMode match {
+      case Random => KMeans.RANDOM
+      case Parallel => KMeans.K_MEANS_PARALLEL
+    }
+
+    val model = new KMeans()
+      .setInitializationMode(initMode)
+      .setK(p.k)
+      .setMaxIterations(p.numIterations)
+      .run(vect)
+
+    model
+  }
+
   def run(params: Params) {
     val conf = new SparkConf().setAppName(s"hw.ClusterKMeans with $params")
     val sc = new SparkContext(conf)
@@ -233,7 +245,7 @@ epsilon determines the distance threshold within which we consider k-means to ha
     val col_service = records.map(_(I_SERVICE)).distinct.zipWithIndex.collect().toMap
     val col_flag = records.map(_(I_FLAG)).distinct.zipWithIndex.collect().toMap
     val col_label = records.map(_(I_LABEL)).distinct.zipWithIndex.collect().toMap
-    print("### 1# ")
+    print("\n### 1# ")
     col_protocol_type.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
     print("\n### 2# ")
     col_service.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
@@ -242,6 +254,7 @@ epsilon determines the distance threshold within which we consider k-means to ha
     print("\n### 4# ")
     col_label.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
 
+    // Convert string features into integer.
     def strFields2i (r: Array[String]): Array[String] = {
       r(I_PROTOCOL_TYPE) = col_protocol_type(r(I_PROTOCOL_TYPE)).toString
       r(I_SERVICE) = col_service(r(I_SERVICE)).toString
@@ -250,8 +263,8 @@ epsilon determines the distance threshold within which we consider k-means to ha
       r
     }
 
-//    val parsedData = records.map(r => strFields2i(r))
-    val parsedData = records.map(r => strFields2i(r)).map(r => r.dropRight(1)) // remove the label.
+    val fullData = records.map(r => strFields2i(r))
+    val parsedData = fullData.map(r => r.dropRight(1)) // remove the label.
 
 //    print("\n### 5#\n")
 //    parsedData.collect().foreach(l => { l.foreach(s => print(s + ",")); println() } )
