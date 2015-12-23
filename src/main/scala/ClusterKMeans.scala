@@ -22,7 +22,7 @@ package nl.ing.mlx
 // scalastyle:off println
 //import org.apache.log4j.{Level, Logger}
 import org.apache.spark.mllib.clustering.{KMeansModel, KMeans}
-import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.{Vectors, Vector}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import scopt.OptionParser
@@ -274,7 +274,24 @@ epsilon determines the distance threshold within which we consider k-means to ha
 
     println("| K | WSSSE | Time (sec) |")
 
+    def KmeansRun (km: KMeans, v:RDD[Vector]): (KMeansModel, Double, Double) = {
+      val startTime = System.nanoTime()
+      val model = km.setK(k).run(v)
+      val elapsed = (System.nanoTime() - startTime) / 1e9
+
+      // Evaluate clustering by computing Within Set Sum of Squared Errors
+      val WSSSE = model.computeCost(vect)
+      (model, WSSSE, elapsed)
+    }
+
     val ks = params.k until NUM_COLS
+    val () = KmeansRun(km, vect)
+    val endDif = 0.01 // 1% difference of WSSSE between two run of different k values, then stop.
+    do {
+      val WSSSE2 = WSSSE
+
+    } while ((WSSSE - WSSSE2)/WSSSE > endDif)
+
     val se = ks.map { k =>
       {
         val startTime = System.nanoTime()
@@ -286,15 +303,6 @@ epsilon determines the distance threshold within which we consider k-means to ha
         // Evaluate clustering by computing Within Set Sum of Squared Errors
         val WSSSE = model.computeCost(vect)
         println(s"| $k | $WSSSE | $elapsed |")
-
-        (k, WSSSE, elapsed, model)
-      }
-    }
-
-    val error = 5.0
-    ks.foldLeft(error){(test, idx) =>
-      val currentError = ???
-      if(currentError > error) {
 
       }
     }
