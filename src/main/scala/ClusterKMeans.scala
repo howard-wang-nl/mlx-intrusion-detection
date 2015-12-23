@@ -40,19 +40,6 @@ import scopt.OptionParser
 
 object ClusterKMeans {
 
-  object InitializationMode extends Enumeration {
-    type InitializationMode = Value
-    val Random, Parallel = Value
-  }
-
-  import InitializationMode._
-
-  case class Params(
-      input: String = null,
-      k: Int = -1,
-      numIterations: Int = 10,
-      initializationMode: InitializationMode = Parallel) extends AbstractParams[Params]
-
   /* Input data fields
   http://kdd.ics.uci.edu/databases/kddcup99/task.html
   http://kdd.ics.uci.edu/databases/kddcup99/kddcup99.html
@@ -76,8 +63,9 @@ Basic features of individual TCP connections.
 |land  |1 if connection is from/to the same host/port; 0 otherwise  |discrete|
 |wrong_fragment  |number of ``wrong'' fragments  |continuous|
 |urgent  |number of urgent packets  |continuous|
-||||
-|Content features within a connection suggested by domain knowledge.|
+
+Content features within a connection suggested by domain knowledge.
+|---------------|---------------|-----|
 |hot  |number of ``hot'' indicators |continuous|
 |num_failed_logins  |number of failed login attempts  |continuous|
 |logged_in  |1 if successfully logged in; 0 otherwise  |discrete|
@@ -91,8 +79,9 @@ Basic features of individual TCP connections.
 |num_outbound_cmds |number of outbound commands in an ftp session  |continuous|
 |is_hot_login  |1 if the login belongs to the ``hot'' list; 0 otherwise  |discrete|
 |is_guest_login  |1 if the login is a ``guest''login; 0 otherwise  |discrete|
-||||
-|Traffic features computed using a two-second time window.|
+
+Traffic features computed using a two-second time window.
+|---------------|---------------|-----|
 |count  |number of connections to the same host as the current connection in the past two seconds  |continuous|
 ||Note: The following  features refer to these same-host connections.|
 |serror_rate  |% of connections that have ``SYN'' errors  |continuous|
@@ -184,6 +173,21 @@ Basic features of individual TCP connections.
     ("warezmaster", "r2l")
   )
 
+  object InitializationMode extends Enumeration {
+    type InitializationMode = Value
+    val Random, Parallel = Value
+  }
+
+  import InitializationMode._
+
+  case class Params(
+                     input: String = null,
+                     k: Int = 2,
+                     numIterations: Int = 10,
+                     relDifWSSSE: Double = 0.01,
+                     initializationMode: InitializationMode = Parallel) extends AbstractParams[Params]
+
+
   def main(args: Array[String]) {
     val defaultParams = Params()
 
@@ -196,6 +200,9 @@ Basic features of individual TCP connections.
       opt[Int]("numIterations")
         .text(s"number of iterations, default: ${defaultParams.numIterations}")
         .action((x, c) => c.copy(numIterations = x))
+      opt[Double]("relDifWSSSE")
+        .text(s"relative difference of WSSSE between different run with k, default: ${defaultParams.relDifWSSSE}")
+        .action((x, c) => c.copy(relDifWSSSE = x))
       opt[String]("initMode")
         .text(s"initialization mode (${InitializationMode.values.mkString(",")}), " +
         s"default: ${defaultParams.initializationMode}")
@@ -222,6 +229,7 @@ epsilon determines the distance threshold within which we consider k-means to ha
     val conf = new SparkConf().setAppName(s"hw.ClusterKMeans with $params")
     val sc = new SparkContext(conf)
 
+    println(s"\nK-Means Clustering parameters:\n$params")
 //    Logger.getRootLogger.setLevel(Level.WARN)
 
     val lines = sc.textFile(params.input)
@@ -229,15 +237,27 @@ epsilon determines the distance threshold within which we consider k-means to ha
     val col_protocol_type = records.map(_(I_PROTOCOL_TYPE)).distinct.zipWithIndex.collect().toMap
     val col_service = records.map(_(I_SERVICE)).distinct.zipWithIndex.collect().toMap
     val col_flag = records.map(_(I_FLAG)).distinct.zipWithIndex.collect().toMap
-    val col_label = records.map(_(I_LABEL)).distinct.zipWithIndex.collect().toMap
-    print("\n### 1# ")
-    col_protocol_type.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
-    print("\n### 2# ")
-    col_service.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
-    print("\n### 3# ")
-    col_flag.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
-    print("\n### 4# ")
-    col_label.toSeq.sortBy(_._2).foreach(f => print(s"(${f._1}, ${f._2}), "))
+    val col_label = records.map(_(I_LABEL)).distinct.map(_.stripSuffix(".")).zipWithIndex.collect().toMap
+
+    val numProtocols = col_protocol_type.size
+    println(s"\n| Number of Protocols | $numProtocols |")
+    println(  s"| ------------------- | ------------- |")
+    col_protocol_type.toSeq.sortBy(_._2).foreach(f => println(s"| ${f._2} | ${f._1} |"))
+
+    val numServices = col_service.size
+    println(s"\n| Number of Services | $numServices |")
+    println(  s"| ------------------ | ------------ |")
+    col_service.toSeq.sortBy(_._2).foreach(f => println(s"| ${f._2} | ${f._1} |"))
+
+    val numFlags = col_flag.size
+    println(s"\n| Number of Flags | $numFlags |")
+    println(  s"| --------------- | --------- |")
+    col_flag.toSeq.sortBy(_._2).foreach(f => println(s"| ${f._2} | ${f._1} |"))
+
+    val numLabels = col_label.size
+    println(s"\n| Number of Intrusion Labels | $numLabels |")
+    println(  s"| -------------------------- | ---------- |")
+    col_label.toSeq.sortBy(_._2).foreach(f => println(s"| ${f._2} | ${f._1} |"))
 
     // Convert string features into integer.
     def strFields2i (r: Array[String]): Array[String] = {
@@ -257,9 +277,8 @@ epsilon determines the distance threshold within which we consider k-means to ha
     val vect = parsedData.map(l => Vectors.dense(l.map(_.toDouble))).cache
 
     val numSamples = vect.count()
-
-    println(s"| Number of Samples | $numSamples |")
-
+    println(s"\n| Number of Samples | $numSamples |")
+    println(   "| ----------------- | ----------- |")
 //    print("\n### 6#\n")
 //    vect.collect().foreach(v => println(v.toString))
 
@@ -272,61 +291,33 @@ epsilon determines the distance threshold within which we consider k-means to ha
       .setInitializationMode(initMode)
       .setMaxIterations(params.numIterations)
 
-    println("| K | WSSSE | Time (sec) |")
+    println("\n| K | WSSSE | Time (sec) |")
+    println(  "| - | ----- | ---------- |")
 
-    val endDif = 0.01 // 1% difference of WSSSE between two run of different k values, then stop.
-    var WSSSE = 0.0
+    var WSSSE = 1.0
     var WSSSE2 = 0.0
-    var k = params.k
-    var res: Array[(Int, KMeansModel, Double, Double)]
-    do {
-      WSSSE2 = WSSSE
+//    case class KMeansResult (k:Int, model:KMeansModel, err:Double, sec:Double)
+    val res = for {
+      k <- params.k until (numSamples/2).toInt
+      if Math.abs(WSSSE - WSSSE2)/WSSSE > params.relDifWSSSE // relative difference of WSSSE between two run of different k values, then stop.
+    } yield {
       val startTime = System.nanoTime()
       val model = km.setK(k).run(vect)
       val elapsed = (System.nanoTime() - startTime) / 1e9
       // Evaluate clustering by computing Within Set Sum of Squared Errors
+      WSSSE2 = WSSSE
       WSSSE = model.computeCost(vect)
-      res :+= (k, model, WSSSE, elapsed)
-      k += 1
-    } while ((WSSSE - WSSSE2)/WSSSE > endDif && k < NUM_COLS)
-
-    type Result = (Int, KMeansModel, Double, Double, Boolean)
-
-    (params.k until NUM_COLS).foldLeft(List[Result]()){
-      (res, k) =>
-        if(res.head._5) {
-
-          val startTime = System.nanoTime()
-          val model = km.setK(k).run(vect)
-          val elapsed = (System.nanoTime() - startTime) / 1e9
-          // Evaluate clustering by computing Within Set Sum of Squared Errors
-          WSSSE = model.computeCost(vect)
-          val WSSE2 = res.head._3
-          val successFlag = (WSSSE - WSSSE2)/WSSSE > endDif
-
-          (k, model, WSSSE, elapsed, successFlag) :: res
-        } else
-          res
-
+      println(s"### 7# $k")
+      (k, model, WSSSE, elapsed)
     }
 
-    val se = ks.map { k =>
-      {
-        val startTime = System.nanoTime()
-
-        val model = km.setK(params.k).run(vect)
-
-        val elapsed = (System.nanoTime() - startTime) / 1e9
-
-        // Evaluate clustering by computing Within Set Sum of Squared Errors
-        val WSSSE = model.computeCost(vect)
-        println(s"| $k | $WSSSE | $elapsed |")
-
-      }
+    for ((k, model, err, sec) <- res) {
+      println(s"| $k | $err | $sec |")
     }
 
     println("""
               || Notes |
+              || ----- | -------------------------------- |
               || WSSSE | Within Set Sum of Squared Errors |
               |""".stripMargin)
 
