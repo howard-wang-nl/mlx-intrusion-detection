@@ -274,23 +274,41 @@ epsilon determines the distance threshold within which we consider k-means to ha
 
     println("| K | WSSSE | Time (sec) |")
 
-    def KmeansRun (km: KMeans, v:RDD[Vector]): (KMeansModel, Double, Double) = {
-      val startTime = System.nanoTime()
-      val model = km.setK(k).run(v)
-      val elapsed = (System.nanoTime() - startTime) / 1e9
-
-      // Evaluate clustering by computing Within Set Sum of Squared Errors
-      val WSSSE = model.computeCost(vect)
-      (model, WSSSE, elapsed)
-    }
-
-    val ks = params.k until NUM_COLS
-    val () = KmeansRun(km, vect)
     val endDif = 0.01 // 1% difference of WSSSE between two run of different k values, then stop.
+    var WSSSE = 0.0
+    var WSSSE2 = 0.0
+    var k = params.k
+    var res: Array[(Int, KMeansModel, Double, Double)]
     do {
-      val WSSSE2 = WSSSE
+      WSSSE2 = WSSSE
+      val startTime = System.nanoTime()
+      val model = km.setK(k).run(vect)
+      val elapsed = (System.nanoTime() - startTime) / 1e9
+      // Evaluate clustering by computing Within Set Sum of Squared Errors
+      WSSSE = model.computeCost(vect)
+      res :+= (k, model, WSSSE, elapsed)
+      k += 1
+    } while ((WSSSE - WSSSE2)/WSSSE > endDif && k < NUM_COLS)
 
-    } while ((WSSSE - WSSSE2)/WSSSE > endDif)
+    type Result = (Int, KMeansModel, Double, Double, Boolean)
+
+    (params.k until NUM_COLS).foldLeft(List[Result]()){
+      (res, k) =>
+        if(res.head._5) {
+
+          val startTime = System.nanoTime()
+          val model = km.setK(k).run(vect)
+          val elapsed = (System.nanoTime() - startTime) / 1e9
+          // Evaluate clustering by computing Within Set Sum of Squared Errors
+          WSSSE = model.computeCost(vect)
+          val WSSE2 = res.head._3
+          val successFlag = (WSSSE - WSSSE2)/WSSSE > endDif
+
+          (k, model, WSSSE, elapsed, successFlag) :: res
+        } else
+          res
+
+    }
 
     val se = ks.map { k =>
       {
