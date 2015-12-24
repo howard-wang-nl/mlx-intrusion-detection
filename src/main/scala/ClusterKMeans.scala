@@ -233,11 +233,11 @@ epsilon determines the distance threshold within which we consider k-means to ha
 //    Logger.getRootLogger.setLevel(Level.WARN)
 
     val lines = sc.textFile(params.input)
-    val records = lines.map(_.split(','))
+    val records = lines.map(_.split(',')).map(a => {a.update(I_LABEL, a(I_LABEL).stripSuffix(".")); a})
     val col_protocol_type = records.map(_(I_PROTOCOL_TYPE)).distinct.zipWithIndex.collect().toMap
     val col_service = records.map(_(I_SERVICE)).distinct.zipWithIndex.collect().toMap
     val col_flag = records.map(_(I_FLAG)).distinct.zipWithIndex.collect().toMap
-    val col_label = records.map(_(I_LABEL)).distinct.map(_.stripSuffix(".")).zipWithIndex.collect().toMap
+    val col_label = records.map(_(I_LABEL)).distinct.zipWithIndex.collect().toMap
 
     val numProtocols = col_protocol_type.size
     println(s"\n| Number of Protocols | $numProtocols |")
@@ -307,7 +307,7 @@ epsilon determines the distance threshold within which we consider k-means to ha
       // Evaluate clustering by computing Within Set Sum of Squared Errors
       WSSSE2 = WSSSE
       WSSSE = model.computeCost(vect)
-      println(s"### 7# $k")
+//      println(s"### 7# $k")
       (k, model, WSSSE, elapsed)
     }
 
