@@ -4,4 +4,4 @@
 # Read configuration of variables.
 . config.sh
 
-ssh $USER@$HOST sudo -u spark $TDIR/submit.sh
+ssh $USER@$HOST sudo -u $SPARK_USER $TDIR/submit.sh

@@ -3,6 +3,7 @@ HOST=lab5
 
 # Remote SSH user.
 USER=admin
+SPARK_USER=spark
 
 # Base directory to save the files on remote host.
 BASE_DIR=/tmp
