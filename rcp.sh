@@ -29,8 +29,7 @@ fi
 EOF
 
 # Copy files.
-scp $JAR_FP $USER@$HOST:"$TDIR"
-scp submit.sh $USER@$HOST:"$TDIR"
+scp $JAR_FP submit.sh $USER@$HOST:"$TDIR"
 
 # Correct file permissions.
 ssh $USER@$HOST <<EOF
